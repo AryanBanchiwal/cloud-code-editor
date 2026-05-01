@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cloud Code Editor</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs/loader.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            background: #1e1e1e;
+            color: white;
+        }
+
+        .topbar {
+            background: #111;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        input, button {
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+        }
+
+        button {
+            background: #007acc;
+            color: white;
+            cursor: pointer;
+        }
+
+        .main {
+            display: flex;
+            height: calc(100vh - 55px);
+        }
+
+        .left {
+            width: 75%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #editor {
+            height: 75%;
+        }
+
+        #output {
+            height: 25%;
+            background: white;
+            border: none;
+        }
+
+        .right {
+            width: 25%;
+            background: #252526;
+            padding: 10px;
+        }
+
+        #chatBox {
+            height: 350px;
+            background: #111;
+            padding: 10px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="topbar">
+    <input id="username" placeholder="Username">
+    <input id="room" placeholder="Room ID">
+    <button onclick="joinRoom()">Join</button>
+    <button onclick="runCode()">Run Code</button>
+</div>
+
+<div class="main">
+    <div class="left">
+        <div id="editor"></div>
+        <iframe id="output"></iframe>
+    </div>
+
+    <div class="right">
+        <h3>Chat</h3>
+        <div id="chatBox"></div>
+
+        <input id="msg" placeholder="Message">
+        <button onclick="sendMsg()">Send</button>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+
+    let username = "";
+    let room = "";
+    let editor;
+    let ignore = false;
+
+    require.config({
+        paths: {
+            vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs"
+        }
+    });
+
+    require(["vs/editor/editor.main"], function () {
+        editor = monaco.editor.create(document.getElementById("editor"), {
+            value: "<h1>Hello Cloud Editor</h1>\n<p>This is my code editor.</p>",
+            language: "html",
+            theme: "vs-dark",
+            automaticLayout: true
+        });
+
+        editor.onDidChangeModelContent(() => {
+            if (ignore || room === "") return;
+
+            socket.emit("code_change", {
+                room_id: room,
+                code: editor.getValue()
+            });
+        });
+    });
+
+    function joinRoom() {
+        username = document.getElementById("username").value.trim();
+        room = document.getElementById("room").value.trim();
+
+        if (username === "" || room === "") {
+            alert("Enter username and room ID");
+            return;
+        }
+
+        socket.emit("join_room", {
+            username: username,
+            room_id: room
+        });
+
+        alert("Joined successfully");
+    }
+
+    socket.on("load_code", function(data) {
+        if (editor) {
+            ignore = true;
+            editor.setValue(data.code);
+            ignore = false;
+        }
+    });
+
+    socket.on("code_update", function(data) {
+        if (editor) {
+            ignore = true;
+            editor.setValue(data.code);
+            ignore = false;
+        }
+    });
+
+    function sendMsg() {
+        let msg = document.getElementById("msg").value.trim();
+
+        if (msg === "") return;
+
+        socket.emit("send_message", {
+            username: username,
+            room_id: room,
+            message: msg
+        });
+
+        document.getElementById("msg").value = "";
+    }
+
+    socket.on("receive_message", function(data) {
+        let chatBox = document.getElementById("chatBox");
+        chatBox.innerHTML += "<p><b>" + data.user + ":</b> " + data.message + "</p>";
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    function runCode() {
+        document.getElementById("output").srcdoc = editor.getValue();
+    }
+</script>
+
+</body>
+</html>
