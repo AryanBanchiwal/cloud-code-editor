@@ -1,10 +1,13 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit, join_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret123'
 
-socketio = SocketIO(app, async_mode="threading")
+socketio = SocketIO(app)
 
 rooms = {}
 
