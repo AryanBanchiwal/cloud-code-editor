@@ -9,180 +9,278 @@
     <style>
         body {
             margin: 0;
-            font-family: Arial;
-            background: #1e1e1e;
+            font-family: Arial, sans-serif;
+            background: #111827;
             color: white;
         }
 
         .topbar {
-            background: #111;
-            padding: 10px;
+            height: 55px;
+            background: #020617;
             display: flex;
+            align-items: center;
             gap: 10px;
+            padding: 0 15px;
+            border-bottom: 1px solid #334155;
         }
 
-        input, button {
+        .topbar input, select {
             padding: 8px;
-            border-radius: 5px;
+            border-radius: 6px;
             border: none;
         }
 
         button {
-            background: #007acc;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #2563eb;
             color: white;
             cursor: pointer;
         }
 
-        .main {
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .logout {
+            margin-left: auto;
+            background: #dc2626;
+        }
+
+        .container {
             display: flex;
             height: calc(100vh - 55px);
         }
 
-        .left {
-            width: 75%;
+        .editor-area {
+            width: 72%;
             display: flex;
             flex-direction: column;
         }
 
         #editor {
-            height: 75%;
+            height: 70%;
+            border-bottom: 1px solid #334155;
         }
 
-        #output {
-            height: 25%;
-            background: white;
-            border: none;
+        #outputBox {
+            height: 30%;
+            background: #020617;
+            color: #22c55e;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: Consolas, monospace;
+            white-space: pre-wrap;
         }
 
-        .right {
-            width: 25%;
-            background: #252526;
-            padding: 10px;
+        .chat-area {
+            width: 28%;
+            background: #1e293b;
+            border-left: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background: #0f172a;
+            font-weight: bold;
+            border-bottom: 1px solid #334155;
         }
 
         #chatBox {
-            height: 350px;
-            background: #111;
-            padding: 10px;
+            flex: 1;
+            padding: 12px;
             overflow-y: auto;
-            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 8px;
+            padding: 10px;
+            background: #0f172a;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
         }
     </style>
 </head>
 
 <body>
 
-<div class="topbar">
-    <input id="username" placeholder="Username">
-    <input id="room" placeholder="Room ID">
-    <button onclick="joinRoom()">Join</button>
-    <button onclick="runCode()">Run Code</button>
-</div>
+    <div class="topbar">
+        <b>☁️ Cloud Code Editor</b>
 
-<div class="main">
-    <div class="left">
-        <div id="editor"></div>
-        <iframe id="output"></iframe>
+        <input id="username" value="{{ username }}" readonly>
+        <input id="room" placeholder="Room ID">
+
+        <select id="language">
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="java">Java</option>
+            <option value="cpp">C++</option>
+            <option value="html">HTML</option>
+        </select>
+
+        <button onclick="joinRoom()">Join Room</button>
+        <button onclick="runCode()">Run Code</button>
+
+        <a href="/logout">
+            <button class="logout">Logout</button>
+        </a>
     </div>
 
-    <div class="right">
-        <h3>Chat</h3>
-        <div id="chatBox"></div>
+    <div class="container">
 
-        <input id="msg" placeholder="Message">
-        <button onclick="sendMsg()">Send</button>
+        <div class="editor-area">
+            <div id="editor"></div>
+            <pre id="outputBox">Output will appear here...</pre>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header">Team Chat</div>
+            <div id="chatBox"></div>
+
+            <div class="chat-input">
+                <input id="msg" placeholder="Type message">
+                <button onclick="sendMsg()">Send</button>
+            </div>
+        </div>
+
     </div>
-</div>
 
-<script>
-    const socket = io();
+    <script>
+        const socket = io();
 
-    let username = "";
-    let room = "";
-    let editor;
-    let ignore = false;
+        let username = document.getElementById("username").value;
+        let room = "";
+        let editor;
+        let ignore = false;
 
-    require.config({
-        paths: {
-            vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs"
-        }
-    });
-
-    require(["vs/editor/editor.main"], function () {
-        editor = monaco.editor.create(document.getElementById("editor"), {
-            value: "<h1>Hello Cloud Editor</h1>\n<p>This is my code editor.</p>",
-            language: "html",
-            theme: "vs-dark",
-            automaticLayout: true
+        require.config({
+            paths: {
+                vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs"
+            }
         });
 
-        editor.onDidChangeModelContent(() => {
-            if (ignore || room === "") return;
+        require(["vs/editor/editor.main"], function () {
+            editor = monaco.editor.create(document.getElementById("editor"), {
+                value: "# Welcome to Cloud Code Editor\nprint('Hello Cloud!')",
+                language: "python",
+                theme: "vs-dark",
+                automaticLayout: true
+            });
 
-            socket.emit("code_change", {
-                room_id: room,
-                code: editor.getValue()
+            editor.onDidChangeModelContent(() => {
+                if (ignore || room === "") return;
+
+                socket.emit("code_change", {
+                    room_id: room,
+                    code: editor.getValue()
+                });
             });
         });
-    });
 
-    function joinRoom() {
-        username = document.getElementById("username").value.trim();
-        room = document.getElementById("room").value.trim();
+        function joinRoom() {
+            room = document.getElementById("room").value.trim();
 
-        if (username === "" || room === "") {
-            alert("Enter username and room ID");
-            return;
+            if (room === "") {
+                alert("Please enter room ID");
+                return;
+            }
+
+            socket.emit("join_room", {
+                username: username,
+                room_id: room
+            });
+
+            alert("Joined room: " + room);
         }
 
-        socket.emit("join_room", {
-            username: username,
-            room_id: room
+        socket.on("load_code", function(data) {
+            if (editor) {
+                ignore = true;
+                editor.setValue(data.code);
+                ignore = false;
+            }
         });
 
-        alert("Joined successfully");
-    }
-
-    socket.on("load_code", function(data) {
-        if (editor) {
-            ignore = true;
-            editor.setValue(data.code);
-            ignore = false;
-        }
-    });
-
-    socket.on("code_update", function(data) {
-        if (editor) {
-            ignore = true;
-            editor.setValue(data.code);
-            ignore = false;
-        }
-    });
-
-    function sendMsg() {
-        let msg = document.getElementById("msg").value.trim();
-
-        if (msg === "") return;
-
-        socket.emit("send_message", {
-            username: username,
-            room_id: room,
-            message: msg
+        socket.on("code_update", function(data) {
+            if (editor) {
+                ignore = true;
+                editor.setValue(data.code);
+                ignore = false;
+            }
         });
 
-        document.getElementById("msg").value = "";
-    }
+        function sendMsg() {
+            let msg = document.getElementById("msg").value.trim();
 
-    socket.on("receive_message", function(data) {
-        let chatBox = document.getElementById("chatBox");
-        chatBox.innerHTML += "<p><b>" + data.user + ":</b> " + data.message + "</p>";
-        chatBox.scrollTop = chatBox.scrollHeight;
-    });
+            if (msg === "" || room === "") return;
 
-    function runCode() {
-        document.getElementById("output").srcdoc = editor.getValue();
-    }
-</script>
+            socket.emit("send_message", {
+                username: username,
+                room_id: room,
+                message: msg
+            });
+
+            document.getElementById("msg").value = "";
+        }
+
+        socket.on("receive_message", function(data) {
+            let chatBox = document.getElementById("chatBox");
+            chatBox.innerHTML += "<p><b>" + data.user + ":</b> " + data.message + "</p>";
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        async function runCode() {
+            const code = editor.getValue();
+            const lang = document.getElementById("language").value;
+            const outputBox = document.getElementById("outputBox");
+
+            if (lang === "html") {
+                outputBox.innerText = "HTML preview is not executed in terminal. Paste HTML code in editor and view through browser preview.";
+                return;
+            }
+
+            const versions = {
+                python: "3.10.0",
+                javascript: "18.15.0",
+                java: "15.0.2",
+                cpp: "10.2.0"
+            };
+
+            outputBox.innerText = "Running code...";
+
+            try {
+                const response = await fetch("https://emkc.org/api/v2/piston/execute", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        language: lang,
+                        version: versions[lang],
+                        files: [{ content: code }]
+                    })
+                });
+
+                const data = await response.json();
+
+                outputBox.innerText =
+                    data.run.output || data.run.stderr || "No output";
+
+            } catch (error) {
+                outputBox.innerText = "Error while running code.";
+            }
+        }
+    </script>
 
 </body>
 </html>
