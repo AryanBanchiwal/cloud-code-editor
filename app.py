@@ -1,60 +1,79 @@
-import eventlet
-eventlet.monkey_patch()
-
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit, join_room
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret123'
+app.secret_key = "secret123"
 
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
+# dummy users (login id/password)
+users = {
+    "aryan": "1234"
+}
+
+# store rooms
 rooms = {}
 
-@app.route('/')
+# ---------------- LOGIN ROUTE ----------------
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        if username in users and users[username] == password:
+            session["username"] = username
+            return redirect(url_for("index"))
+        else:
+            return "Invalid username or password"
+
+    return render_template("login.html")
+
+# ---------------- LOGOUT ----------------
+@app.route("/logout")
+def logout():
+    session.pop("username", None)
+    return redirect(url_for("login"))
+
+# ---------------- HOME ----------------
+@app.route("/")
 def index():
-    return render_template('index.html')
+    if "username" not in session:
+        return redirect(url_for("login"))
+    return render_template("index.html")
 
-@socketio.on('join_room')
+# ---------------- SOCKET JOIN ----------------
+@socketio.on("join_room")
 def handle_join(data):
-    username = data['username']
-    room_id = data['room_id']
-
-    join_room(room_id)
+    room_id = data["room_id"]
+    username = session.get("username")
 
     if room_id not in rooms:
         rooms[room_id] = {
-            "code": "<h1>Hello Cloud Editor</h1>\n<p>This is my code editor.</p>",
+            "code": "<h1>Hello Cloud Editor</h1>",
             "users": []
         }
 
     if username not in rooms[room_id]["users"]:
         rooms[room_id]["users"].append(username)
 
-    print("JOIN EVENT RECEIVED:", data)
-
     emit("load_code", {"code": rooms[room_id]["code"]})
-    emit("receive_message", {"user": "System", "message": username + " joined"}, room=room_id)
+    emit("receive_message", {
+        "user": "System",
+        "message": username + " joined"
+    }, room=room_id)
 
-@socketio.on('code_change')
+# ---------------- SOCKET CODE CHANGE ----------------
+@socketio.on("code_change")
 def handle_code_change(data):
-    room_id = data['room_id']
-    code = data['code']
+    room_id = data["room_id"]
+    code = data["code"]
 
-    rooms[room_id]["code"] = code
+    if room_id in rooms:
+        rooms[room_id]["code"] = code
 
     emit("code_update", {"code": code}, room=room_id, include_self=False)
 
-@socketio.on('send_message')
-def handle_message(data):
-    room_id = data['room_id']
-    username = data['username']
-    message = data['message']
-
-    emit("receive_message", {
-        "user": username,
-        "message": message
-    }, room=room_id)
-
-if __name__ == '__main__':
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
+# ---------------- RUN ----------------
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=5000)
