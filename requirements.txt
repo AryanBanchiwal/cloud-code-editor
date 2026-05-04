@@ -1,6 +1,4 @@
 Flask
 Flask-SocketIO
-pymongo
-dnspython
-eventlet
 gunicorn
+requests
