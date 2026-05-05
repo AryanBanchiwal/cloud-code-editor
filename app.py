@@ -4,7 +4,7 @@ import requests
 import os
 
 app = Flask(__name__)
-app.secret_key = "cloud_editor_secret_key_2026"
+app.secret_key = "cloud_editor_secret_2026"
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
@@ -45,65 +45,82 @@ def index():
 @app.route("/run", methods=["POST"])
 def run_code():
     data = request.get_json()
-    code = data.get("code")
-    language = data.get("language")
-
-    versions = {
-        "python": {"language": "python", "version": "3.10.0"},
-        "javascript": {"language": "javascript", "version": "18.15.0"},
-        "java": {"language": "java", "version": "15.0.2"},
-        "cpp": {"language": "c++", "version": "10.2.0"}
-    }
+    code = data.get("code", "")
+    language = data.get("language", "")
 
     if language == "html":
-        return jsonify({
-            "output": code,
-            "type": "html"
-        })
+        return jsonify({"type": "html", "output": code})
 
-    if language not in versions:
-        return jsonify({
-            "output": "Language not supported",
-            "type": "text"
-        })
+    if language == "css":
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>{code}</style>
+        </head>
+        <body>
+            <h1>CSS Preview</h1>
+            <p>This is a preview of your CSS code.</p>
+            <button>Sample Button</button>
+        </body>
+        </html>
+        """
+        return jsonify({"type": "html", "output": html})
+
+    language_map = {
+        "python": "python",
+        "javascript": "javascript",
+        "java": "java",
+        "cpp": "cpp"
+    }
 
     try:
+        run_language = language_map.get(language)
+
+        if not run_language:
+            return jsonify({"type": "text", "output": "Language not supported."})
+
+        runtimes = requests.get(
+            "https://emkc.org/api/v2/piston/runtimes",
+            timeout=15
+        ).json()
+
+        selected_runtime = None
+
+        for runtime in runtimes:
+            names = [runtime.get("language", "")] + runtime.get("aliases", [])
+            if run_language in names:
+                selected_runtime = runtime
+                break
+
+        if not selected_runtime:
+            return jsonify({"type": "text", "output": "Runtime not available."})
+
         payload = {
-            "language": versions[language]["language"],
-            "version": versions[language]["version"],
-            "files": [
-                {
-                    "content": code
-                }
-            ]
+            "language": selected_runtime["language"],
+            "version": selected_runtime["version"],
+            "files": [{"content": code}]
         }
 
         response = requests.post(
             "https://emkc.org/api/v2/piston/execute",
             json=payload,
-            timeout=15
+            timeout=20
         )
 
         result = response.json()
 
         output = ""
-
         if "run" in result:
-            output = result["run"].get("output") or result["run"].get("stderr") or ""
+            output = result["run"].get("output", "") or result["run"].get("stderr", "")
 
         if output.strip() == "":
             output = "No output generated."
 
-        return jsonify({
-            "output": output,
-            "type": "text"
-        })
+        return jsonify({"type": "text", "output": output})
 
     except Exception as e:
-        return jsonify({
-            "output": "Error while running code: " + str(e),
-            "type": "text"
-        })
+        return jsonify({"type": "text", "output": "Execution error: " + str(e)})
 
 @socketio.on("join_room")
 def handle_join(data):
@@ -122,7 +139,6 @@ def handle_join(data):
         rooms[room_id]["users"].append(username)
 
     emit("load_code", {"code": rooms[room_id]["code"]})
-
     emit("receive_message", {
         "user": "System",
         "message": username + " joined the room"

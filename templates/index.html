@@ -2,67 +2,75 @@
 <html>
 <head>
     <title>Cloud Code Editor</title>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs/loader.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
     <style>
         body {
             margin: 0;
-            font-family: Arial;
-            background: #111827;
+            font-family: Arial, sans-serif;
+            background: #1e1e2f;
             color: white;
         }
 
-        .topbar {
-            height: 55px;
-            background: #020617;
+        .navbar {
+            background: #0d6efd;
+            padding: 10px;
             display: flex;
-            align-items: center;
             gap: 10px;
-            padding: 0 15px;
+            align-items: center;
         }
 
         input, select {
             padding: 8px;
-            border-radius: 6px;
+            border-radius: 5px;
             border: none;
         }
 
         button {
             padding: 8px 12px;
-            border-radius: 6px;
             border: none;
-            background: #2563eb;
-            color: white;
+            border-radius: 5px;
             cursor: pointer;
         }
 
-        .logout {
-            margin-left: auto;
-            background: red;
+        .run-btn { background: #198754; color: white; }
+        .join-btn { background: #0dcaf0; }
+        .logout-btn { background: red; color: white; }
+
+        textarea {
+            width: 100%;
+            height: 350px;
+            background: #0d1117;
+            color: #00ff9f;
+            font-size: 16px;
+            padding: 10px;
+            border: none;
         }
 
-        #editor {
-            height: 70vh;
-        }
-
-        #outputBox {
-            height: 20vh;
+        #output {
             background: black;
-            color: #00ff00;
+            color: lime;
+            height: 200px;
             padding: 10px;
             overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        iframe {
+            width: 100%;
+            height: 200px;
+            border: none;
         }
     </style>
 </head>
 
 <body>
 
-<div class="topbar">
+<div class="navbar">
     <b>☁ Cloud Code Editor</b>
 
-    <input id="username" value="{{ username }}" readonly>
+    <input id="username" value="{{username}}" readonly>
+
     <input id="room" placeholder="Room ID">
 
     <select id="language">
@@ -71,129 +79,84 @@
         <option value="java">Java</option>
         <option value="cpp">C++</option>
         <option value="html">HTML</option>
+        <option value="css">CSS</option>
     </select>
 
-    <button onclick="joinRoom()">Join Room</button>
-    <button onclick="runCode()">Run Code</button>
+    <button class="join-btn" onclick="joinRoom()">Join Room</button>
+    <button class="run-btn" onclick="runCode()">Run Code</button>
 
     <a href="/logout">
-        <button class="logout">Logout</button>
+        <button class="logout-btn">Logout</button>
     </a>
 </div>
 
-<div id="editor"></div>
-<pre id="outputBox">Output will appear here...</pre>
+<textarea id="code">
+// Write your code here
+print("Hello Cloud Editor 🚀")
+</textarea>
+
+<h3 style="padding-left:10px;">Output:</h3>
+
+<div id="output"></div>
+<iframe id="preview"></iframe>
 
 <script>
-const socket = io();
+    const socket = io();
 
-let username = document.getElementById("username").value;
-let room = "";
-let editor;
-let ignore = false;
+    function joinRoom() {
+        const room = document.getElementById("room").value;
+        const username = document.getElementById("username").value;
 
-require.config({
-    paths: {
-        vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs"
+        socket.emit("join_room", {
+            room_id: room,
+            username: username
+        });
     }
-});
 
-require(["vs/editor/editor.main"], function () {
-    editor = monaco.editor.create(document.getElementById("editor"), {
-        value: "print('Hello Cloud')",
-        language: "python",
-        theme: "vs-dark"
+    socket.on("load_code", (data) => {
+        document.getElementById("code").value = data.code;
     });
 
-    editor.onDidChangeModelContent(() => {
-        if (ignore || room === "") return;
+    socket.on("code_update", (data) => {
+        document.getElementById("code").value = data.code;
+    });
+
+    document.getElementById("code").addEventListener("input", () => {
+        const room = document.getElementById("room").value;
 
         socket.emit("code_change", {
             room_id: room,
-            code: editor.getValue()
+            code: document.getElementById("code").value
         });
     });
-});
 
-function joinRoom() {
-    room = document.getElementById("room").value;
+    async function runCode() {
+        const code = document.getElementById("code").value;
+        const language = document.getElementById("language").value;
 
-    socket.emit("join_room", {
-        username: username,
-        room_id: room
-    });
+        document.getElementById("output").innerText = "Running...";
+        document.getElementById("preview").srcdoc = "";
 
-    alert("Joined room: " + room);
-}
+        try {
+            const res = await fetch("/run", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({code, language})
+            });
 
-socket.on("load_code", function(data) {
-    ignore = true;
-    editor.setValue(data.code);
-    ignore = false;
-});
+            const data = await res.json();
 
-socket.on("code_update", function(data) {
-    ignore = true;
-    editor.setValue(data.code);
-    ignore = false;
-});
+            if (data.type === "html") {
+                document.getElementById("preview").srcdoc = data.output;
+                document.getElementById("output").innerText = "Rendered in preview below 👇";
+            } else {
+                document.getElementById("output").innerText = data.output;
+            }
 
-
-/* 🔥 FIXED RUN CODE FUNCTION */
-async function runCode() {
-    const code = editor.getValue();
-    const lang = document.getElementById("language").value;
-    const outputBox = document.getElementById("outputBox");
-
-    outputBox.innerText = "Running code...";
-
-    const languageMap = {
-        python: { language: "python", version: "3.10.0" },
-        javascript: { language: "javascript", version: "18.15.0" },
-        java: { language: "java", version: "15.0.2" },
-        cpp: { language: "cpp", version: "10.2.0" }
-    };
-
-    if (lang === "html") {
-        outputBox.innerText = code;
-        return;
-    }
-
-    try {
-        const selected = languageMap[lang];
-
-        const response = await fetch("https://emkc.org/api/v2/piston/execute", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                language: selected.language,
-                version: selected.version,
-                files: [
-                    {
-                        content: code
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        console.log(data);
-
-        if (data.run && data.run.output) {
-            outputBox.innerText = data.run.output;
-        } else if (data.run && data.run.stderr) {
-            outputBox.innerText = data.run.stderr;
-        } else {
-            outputBox.innerText = "No output.";
+        } catch (err) {
+            document.getElementById("output").innerText = "Error running code";
         }
-
-    } catch (error) {
-        console.error(error);
-        outputBox.innerText = "Server connection error.";
     }
-}
 </script>
 
 </body>
