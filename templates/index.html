@@ -309,16 +309,17 @@ socket.on("receive_message", function(data) {
     chatBox.innerHTML += "<p><b>" + data.user + ":</b> " + data.message + "</p>";
     chatBox.scrollTop = chatBox.scrollHeight;
 });
-
-async function runCode() {
+function runCode() {
     const code = document.getElementById("code").value;
     const language = document.getElementById("language").value;
+
     const output = document.getElementById("output");
     const preview = document.getElementById("preview");
 
     output.style.display = "block";
     preview.style.display = "none";
 
+    // HTML Preview
     if (language === "html") {
         preview.style.display = "block";
         output.style.display = "none";
@@ -326,23 +327,58 @@ async function runCode() {
         return;
     }
 
+    // CSS Preview
     if (language === "css") {
         preview.style.display = "block";
         output.style.display = "none";
         preview.srcdoc = `
-            <html>
-            <head>
-                <style>${code}</style>
-            </head>
-            <body>
-                <h1>CSS Preview</h1>
-                <p>This is a sample paragraph.</p>
-                <button>Sample Button</button>
-            </body>
-            </html>
-        `;
+        <html>
+        <head>
+            <style>${code}</style>
+        </head>
+        <body>
+            <h1>CSS Preview</h1>
+            <p>This is a sample paragraph</p>
+        </body>
+        </html>`;
         return;
     }
+
+    // JavaScript REAL execution
+    if (language === "javascript") {
+        try {
+            let result = eval(code);
+            output.innerText = result !== undefined ? result : "Code executed successfully.";
+        } catch (e) {
+            output.innerText = "Error: " + e.message;
+        }
+        return;
+    }
+
+    // Python (Simulated output)
+    if (language === "python") {
+        let lines = code.split("\n");
+        let result = "";
+
+        lines.forEach(line => {
+            if (line.includes("print")) {
+                let content = line.substring(line.indexOf("(")+1, line.lastIndexOf(")"));
+                result += content.replace(/['"]/g, "") + "\n";
+            }
+        });
+
+        output.innerText = result || "Python simulated output.";
+        return;
+    }
+
+    // Java & C++ (Demo mode)
+    if (language === "java" || language === "cpp") {
+        output.innerText = "Compilation simulation:\n\n" + code + "\n\n(Output simulated for demo)";
+        return;
+    }
+}
+
+    
 
     output.innerText = "Running...";
 
