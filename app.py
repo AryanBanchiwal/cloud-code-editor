@@ -1,170 +1,69 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, emit, join_room
-import requests
 import os
 
 app = Flask(__name__)
-app.secret_key = "cloud_editor_secret_2026"
+app.secret_key = "secret123"
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 users = {
-    "aryan": "1234",
-    "test": "1234"
+    "aryan": "1234"
 }
 
 rooms = {}
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST"])
 def login():
-    error = None
-
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        username = request.form["username"]
+        password = request.form["password"]
 
         if username in users and users[username] == password:
             session["username"] = username
-            return redirect(url_for("index"))
-        else:
-            error = "Invalid username or password"
+            return redirect("/editor")
 
-    return render_template("login.html", error=error)
+    return render_template("login.html")
+
+@app.route("/editor")
+def editor():
+    if "username" not in session:
+        return redirect("/")
+    return render_template("index.html", username=session["username"])
 
 @app.route("/logout")
 def logout():
-    session.pop("username", None)
-    return redirect(url_for("login"))
-
-@app.route("/")
-def index():
-    if "username" not in session:
-        return redirect(url_for("login"))
-    return render_template("index.html", username=session["username"])
-
-@app.route("/run", methods=["POST"])
-def run_code():
-    data = request.get_json()
-    code = data.get("code", "")
-    language = data.get("language", "")
-
-    if language == "html":
-        return jsonify({"type": "html", "output": code})
-
-    if language == "css":
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>{code}</style>
-        </head>
-        <body>
-            <h1>CSS Preview</h1>
-            <p>This is a preview of your CSS code.</p>
-            <button>Sample Button</button>
-        </body>
-        </html>
-        """
-        return jsonify({"type": "html", "output": html})
-
-    language_map = {
-        "python": "python",
-        "javascript": "javascript",
-        "java": "java",
-        "cpp": "cpp"
-    }
-
-    try:
-        run_language = language_map.get(language)
-
-        if not run_language:
-            return jsonify({"type": "text", "output": "Language not supported."})
-
-        runtimes = requests.get(
-            "https://emkc.org/api/v2/piston/runtimes",
-            timeout=15
-        ).json()
-
-        selected_runtime = None
-
-        for runtime in runtimes:
-            names = [runtime.get("language", "")] + runtime.get("aliases", [])
-            if run_language in names:
-                selected_runtime = runtime
-                break
-
-        if not selected_runtime:
-            return jsonify({"type": "text", "output": "Runtime not available."})
-
-        payload = {
-            "language": selected_runtime["language"],
-            "version": selected_runtime["version"],
-            "files": [{"content": code}]
-        }
-
-        response = requests.post(
-            "https://emkc.org/api/v2/piston/execute",
-            json=payload,
-            timeout=20
-        )
-
-        result = response.json()
-
-        output = ""
-        if "run" in result:
-            output = result["run"].get("output", "") or result["run"].get("stderr", "")
-
-        if output.strip() == "":
-            output = "No output generated."
-
-        return jsonify({"type": "text", "output": output})
-
-    except Exception as e:
-        return jsonify({"type": "text", "output": "Execution error: " + str(e)})
+    session.clear()
+    return redirect("/")
 
 @socketio.on("join_room")
 def handle_join(data):
-    room_id = data.get("room_id")
-    username = data.get("username", "User")
+    room = data["room"]
+    username = data["username"]
 
-    join_room(room_id)
+    join_room(room)
 
-    if room_id not in rooms:
-        rooms[room_id] = {
-            "code": "print('Hello Cloud Editor')",
-            "users": []
-        }
+    if room not in rooms:
+        rooms[room] = ""
 
-    if username not in rooms[room_id]["users"]:
-        rooms[room_id]["users"].append(username)
+    emit("load_code", {"code": rooms[room]})
 
-    emit("load_code", {"code": rooms[room_id]["code"]})
-    emit("receive_message", {
+    emit("chat", {
         "user": "System",
-        "message": username + " joined the room"
-    }, room=room_id)
+        "msg": username + " joined"
+    }, room=room)
 
-@socketio.on("code_change")
-def handle_code_change(data):
-    room_id = data.get("room_id")
-    code = data.get("code")
+@socketio.on("code")
+def handle_code(data):
+    room = data["room"]
+    code = data["code"]
 
-    if room_id in rooms:
-        rooms[room_id]["code"] = code
+    rooms[room] = code
+    emit("update", {"code": code}, room=room, include_self=False)
 
-    emit("code_update", {"code": code}, room=room_id, include_self=False)
-
-@socketio.on("send_message")
-def handle_message(data):
-    room_id = data.get("room_id")
-    username = data.get("username")
-    message = data.get("message")
-
-    emit("receive_message", {
-        "user": username,
-        "message": message
-    }, room=room_id)
+@socketio.on("chat")
+def handle_chat(data):
+    emit("chat", data, room=data["room"])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port)
+    socketio.run(app, host="0.0.0.0", port=5000)

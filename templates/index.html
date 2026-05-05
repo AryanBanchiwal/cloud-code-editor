@@ -1,435 +1,154 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Cloud Code Editor</title>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <title>Cloud Editor</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
     <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #111827;
-            color: white;
-        }
-
-        .topbar {
-            height: 60px;
-            background: linear-gradient(90deg, #1d4ed8, #2563eb);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 0 15px;
-        }
-
-        .title {
-            font-size: 18px;
-            font-weight: bold;
-            margin-right: 10px;
-        }
-
-        input, select {
-            padding: 10px;
-            border-radius: 6px;
-            border: none;
-            outline: none;
-        }
-
-        button {
-            padding: 10px 14px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            color: white;
-            font-weight: bold;
-            background: #16a34a;
-        }
-
-        .join {
-            background: #06b6d4;
-        }
-
-        .logout {
-            background: #dc2626;
-        }
-
-        .main {
-            display: flex;
-            height: calc(100vh - 60px);
-        }
-
-        .left {
-            width: 72%;
-            display: flex;
-            flex-direction: column;
-        }
-
-        textarea {
-            height: 58%;
-            background: #0f172a;
-            color: #22c55e;
-            font-size: 16px;
-            padding: 15px;
-            border: none;
-            outline: none;
-            resize: none;
-            font-family: Consolas, monospace;
-        }
-
-        .output-title {
-            background: #312e81;
-            padding: 10px;
-            font-weight: bold;
-        }
-
-        #output {
-            height: 28%;
-            background: #020617;
-            color: #22c55e;
-            padding: 12px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            font-family: Consolas, monospace;
-        }
-
-        #preview {
-            height: 28%;
-            width: 100%;
-            border: none;
-            background: white;
-            display: none;
-        }
-
-        .right {
-            width: 28%;
-            background: #1e293b;
-            display: flex;
-            flex-direction: column;
-            border-left: 2px solid #334155;
-        }
-
-        .chat-header {
-            background: #0f172a;
-            padding: 15px;
-            font-weight: bold;
-            border-bottom: 1px solid #334155;
-        }
-
-        #chatBox {
-            flex: 1;
-            padding: 12px;
-            overflow-y: auto;
-        }
-
-        #chatBox p {
-            background: #334155;
-            padding: 8px;
-            border-radius: 6px;
-            margin: 8px 0;
-        }
-
-        .chat-input {
-            display: flex;
-            gap: 8px;
-            padding: 10px;
-            background: #0f172a;
-        }
-
-        .chat-input input {
-            flex: 1;
-        }
+        body { font-family: Arial; margin:0; background:#111; color:white; }
+        .top { background:blue; padding:10px; display:flex; gap:10px; }
+        textarea { width:100%; height:300px; background:black; color:lime; }
+        #output { background:black; padding:10px; height:150px; overflow:auto; }
+        #preview { height:150px; width:100%; border:none; }
     </style>
 </head>
 
 <body>
 
-<div class="topbar">
-    <div class="title">☁ Cloud Code Editor</div>
+<div class="top">
+    <b>Cloud Editor</b>
 
-    <input id="username" value="{{ username }}" readonly>
+    <input id="user" value="{{username}}" readonly>
     <input id="room" placeholder="Room ID">
 
-    <select id="language" onchange="changeLanguage()">
+    <select id="lang">
         <option value="python">Python</option>
         <option value="javascript">JavaScript</option>
-        <option value="java">Java</option>
-        <option value="cpp">C++</option>
         <option value="html">HTML</option>
         <option value="css">CSS</option>
     </select>
 
-    <button class="join" onclick="joinRoom()">Join Room</button>
+    <button onclick="joinRoom()">Join Room</button>
     <button onclick="runCode()">Run Code</button>
 
-    <a href="/logout">
-        <button class="logout">Logout</button>
-    </a>
+    <a href="/logout"><button>Logout</button></a>
 </div>
 
-<div class="main">
+<textarea id="code">print("Hello World")</textarea>
 
-    <div class="left">
-        <textarea id="code"></textarea>
+<h3>Output:</h3>
+<div id="output"></div>
+<iframe id="preview"></iframe>
 
-        <div class="output-title">Output:</div>
-        <div id="output">Output will appear here...</div>
-        <iframe id="preview"></iframe>
-    </div>
+<h3>Chat:</h3>
+<div id="chatBox"></div>
 
-    <div class="right">
-        <div class="chat-header">Team Chat</div>
-        <div id="chatBox"></div>
-
-        <div class="chat-input">
-            <input id="msg" placeholder="Type message">
-            <button onclick="sendMsg()">Send</button>
-        </div>
-    </div>
-
-</div>
+<input id="msg">
+<button onclick="sendMsg()">Send</button>
 
 <script>
+
 const socket = io();
 
 let room = "";
-let username = document.getElementById("username").value;
-let ignore = false;
-
-const defaultCodes = {
-    python:
-`print("Hello from Python")
-print(5 + 10)`,
-
-    javascript:
-`console.log("Hello from JavaScript");
-console.log(5 + 10);`,
-
-    java:
-`public class Main {
-    public static void main(String[] args) {
-        System.out.println("Hello from Java");
-        System.out.println(5 + 10);
-    }
-}`,
-
-    cpp:
-`#include <iostream>
-using namespace std;
-
-int main() {
-    cout << "Hello from C++" << endl;
-    cout << 5 + 10 << endl;
-    return 0;
-}`,
-
-    html:
-`<h1>Hello HTML</h1>
-<p>This is HTML preview.</p>`,
-
-    css:
-`body {
-    background: black;
-    color: lime;
-    text-align: center;
-}
-
-h1 {
-    color: yellow;
-}`
-};
-
-document.getElementById("code").value = defaultCodes.python;
-
-function changeLanguage() {
-    const lang = document.getElementById("language").value;
-    document.getElementById("code").value = defaultCodes[lang];
-    document.getElementById("output").style.display = "block";
-    document.getElementById("preview").style.display = "none";
-    document.getElementById("output").innerText = "Output will appear here...";
-}
 
 function joinRoom() {
-    room = document.getElementById("room").value.trim();
+    room = document.getElementById("room").value;
 
-    if (room === "") {
-        alert("Enter Room ID first");
+    if(room === ""){
+        alert("Enter room");
         return;
     }
 
     socket.emit("join_room", {
-        room_id: room,
-        username: username
+        room: room,
+        username: document.getElementById("user").value
     });
 
-    alert("Joined room: " + room);
+    alert("Joined room");
 }
 
-document.getElementById("code").addEventListener("input", function() {
-    if (ignore || room === "") return;
-
-    socket.emit("code_change", {
-        room_id: room,
-        code: document.getElementById("code").value
-    });
-});
-
-socket.on("load_code", function(data) {
-    ignore = true;
+socket.on("load_code", (data)=>{
     document.getElementById("code").value = data.code;
-    ignore = false;
 });
 
-socket.on("code_update", function(data) {
-    ignore = true;
+socket.on("update", (data)=>{
     document.getElementById("code").value = data.code;
-    ignore = false;
 });
 
-function sendMsg() {
-    let msg = document.getElementById("msg").value.trim();
-
-    if (room === "") {
-        alert("Join room first");
-        return;
+document.getElementById("code").addEventListener("input", ()=>{
+    if(room !== ""){
+        socket.emit("code", {
+            room: room,
+            code: document.getElementById("code").value
+        });
     }
+});
 
-    if (msg === "") return;
+socket.on("chat", (data)=>{
+    let box = document.getElementById("chatBox");
+    box.innerHTML += "<p><b>"+data.user+":</b> "+data.msg+"</p>";
+});
 
-    socket.emit("send_message", {
-        room_id: room,
-        username: username,
-        message: msg
+function sendMsg(){
+    socket.emit("chat", {
+        room: room,
+        user: document.getElementById("user").value,
+        msg: document.getElementById("msg").value
     });
 
-    document.getElementById("msg").value = "";
+    document.getElementById("msg").value="";
 }
 
-socket.on("receive_message", function(data) {
-    let chatBox = document.getElementById("chatBox");
-    chatBox.innerHTML += "<p><b>" + data.user + ":</b> " + data.message + "</p>";
-    chatBox.scrollTop = chatBox.scrollHeight;
-});
-function runCode() {
-    const code = document.getElementById("code").value;
-    const language = document.getElementById("language").value;
+function runCode(){
+    let code = document.getElementById("code").value;
+    let lang = document.getElementById("lang").value;
 
-    const output = document.getElementById("output");
-    const preview = document.getElementById("preview");
+    let out = document.getElementById("output");
+    let preview = document.getElementById("preview");
 
-    output.style.display = "block";
-    preview.style.display = "none";
+    out.innerText="";
+    preview.srcdoc="";
 
-    // HTML Preview
-    if (language === "html") {
-        preview.style.display = "block";
-        output.style.display = "none";
+    // HTML
+    if(lang === "html"){
         preview.srcdoc = code;
         return;
     }
 
-    // CSS Preview
-    if (language === "css") {
-        preview.style.display = "block";
-        output.style.display = "none";
-        preview.srcdoc = `
-        <html>
-        <head>
-            <style>${code}</style>
-        </head>
-        <body>
-            <h1>CSS Preview</h1>
-            <p>This is a sample paragraph</p>
-        </body>
-        </html>`;
+    // CSS
+    if(lang === "css"){
+        preview.srcdoc = "<style>"+code+"</style><h1>Preview</h1>";
         return;
     }
 
-    // JavaScript REAL execution
-    if (language === "javascript") {
-        try {
+    // JavaScript (REAL)
+    if(lang === "javascript"){
+        try{
             let result = eval(code);
-            output.innerText = result !== undefined ? result : "Code executed successfully.";
-        } catch (e) {
-            output.innerText = "Error: " + e.message;
+            out.innerText = result || "Executed";
+        }catch(e){
+            out.innerText = e;
         }
         return;
     }
 
-    // Python (Simulated output)
-    if (language === "python") {
+    // Python (simple simulation)
+    if(lang === "python"){
         let lines = code.split("\n");
         let result = "";
 
-        lines.forEach(line => {
-            if (line.includes("print")) {
-                let content = line.substring(line.indexOf("(")+1, line.lastIndexOf(")"));
-                result += content.replace(/['"]/g, "") + "\n";
+        lines.forEach(l=>{
+            if(l.includes("print")){
+                let t = l.substring(l.indexOf("(")+1, l.lastIndexOf(")"));
+                result += t.replace(/['"]/g,"") + "\n";
             }
         });
 
-        output.innerText = result || "Python simulated output.";
-        return;
-    }
-
-    // Java & C++ (Demo mode)
-    if (language === "java" || language === "cpp") {
-        output.innerText = "Compilation simulation:\n\n" + code + "\n\n(Output simulated for demo)";
-        return;
+        out.innerText = result || "Python output";
     }
 }
 
-    
-
-    output.innerText = "Running...";
-
-    const versions = {
-        python: "3.10.0",
-        javascript: "18.15.0",
-        java: "15.0.2",
-        cpp: "10.2.0"
-    };
-
-    const languageNames = {
-        python: "python",
-        javascript: "javascript",
-        java: "java",
-        cpp: "cpp"
-    };
-
-    try {
-        const response = await fetch("https://emkc.org/api/v2/piston/execute", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                language: languageNames[language],
-                version: versions[language],
-                files: [
-                    {
-                        name: language === "java" ? "Main.java" : "main",
-                        content: code
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-
-        if (data.run && data.run.output) {
-            output.innerText = data.run.output;
-        } else if (data.run && data.run.stderr) {
-            output.innerText = data.run.stderr;
-        } else if (data.message) {
-            output.innerText = data.message;
-        } else {
-            output.innerText = "No output generated.";
-        }
-
-    } catch (error) {
-        output.innerText = "Could not connect to online compiler. Try again later.";
-    }
-}
 </script>
 
 </body>
